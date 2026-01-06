@@ -54,14 +54,35 @@ app.prepare().then(() => {
       }
 
       const room = rooms.get(roomId);
+      
+      // Color palette for players
+      const playerColors = [
+        { primary: '#4A90E2', secondary: '#2E5C8A', name: 'Blue' },
+        { primary: '#E24A4A', secondary: '#8A2E2E', name: 'Red' },
+        { primary: '#4AE24A', secondary: '#2E8A2E', name: 'Green' },
+        { primary: '#E2E24A', secondary: '#8A8A2E', name: 'Yellow' }
+      ];
+      
+      // Check if player already exists
+      const existingPlayerIndex = room.players.findIndex(p => p.id === playerId);
+      let playerColor = null;
+      
+      if (existingPlayerIndex >= 0) {
+        // Player exists, keep their color
+        playerColor = room.players[existingPlayerIndex].color;
+      } else {
+        // New player, assign color based on position
+        const colorIndex = room.players.length % playerColors.length;
+        playerColor = playerColors[colorIndex];
+      }
+      
       const player = {
         id: playerId,
         name: playerName || `Player ${playerId.slice(0, 6)}`,
-        socketId: socket.id
+        socketId: socket.id,
+        color: playerColor || playerColors[0]
       };
 
-      // Check if player already exists
-      const existingPlayerIndex = room.players.findIndex(p => p.id === playerId);
       if (existingPlayerIndex >= 0) {
         room.players[existingPlayerIndex] = player;
       } else {
@@ -488,6 +509,7 @@ app.prepare().then(() => {
         players: room.players,
         gameState: room.gameState
       });
+      }, 2000); // 2 second delay for rolling animation
     });
 
     // Handle rolling state

@@ -58,11 +58,25 @@ function Resource({ name, value, icon, color, gain = 0 }) {
 
 function PlayerDisplay({ player, isCurrentPlayer, gameState }) {
   const playerState = gameState?.players[player.id] || {};
+  const playerColor = player?.color?.primary || '#808080';
   
   return (
-    <div className={`${styles.playerDisplay} ${isCurrentPlayer ? styles.currentPlayer : ""}`}>
+    <div 
+      className={`${styles.playerDisplay} ${isCurrentPlayer ? styles.currentPlayer : ""}`}
+      style={{
+        borderColor: playerColor,
+        borderWidth: isCurrentPlayer ? '3px' : '2px',
+        boxShadow: isCurrentPlayer ? `0 0 15px ${playerColor}` : `0 0 5px ${playerColor}`
+      }}
+    >
       <div className={styles.playerHeader}>
-        <h3>{player.name} {isCurrentPlayer && "(You)"}</h3>
+        <h3>
+          <span 
+            className={styles.playerColorDot}
+            style={{ backgroundColor: playerColor }}
+          ></span>
+          {player.name} {isCurrentPlayer && "(You)"}
+        </h3>
         <div className={styles.pointsDisplay}>
           🏆 {playerState.points || 0} points
         </div>
@@ -142,6 +156,14 @@ function Building({ building, onPurchase, wood, stone, bricks, isSelected, onSel
   );
 }
 
+// Helper to convert hex to RGB
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? 
+    `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` 
+    : '74, 144, 226';
+}
+
 function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuilding, currentPlayerId, players, attackMode, myCastles }) {
   const tiles = [];
   
@@ -152,12 +174,17 @@ function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuild
     return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
   };
   
+  // Get current player's color
+  const currentPlayer = players.find(p => p.id === currentPlayerId);
+  const currentPlayerColor = currentPlayer?.color?.primary || '#4A90E2';
+  
   for (let y = 0; y < mapSize; y++) {
     for (let x = 0; x < mapSize; x++) {
       const building = buildings.find(b => b.x === x && b.y === y);
       const player = building ? players.find(p => p.id === building.playerId) : null;
       const isCurrentPlayer = player && player.id === currentPlayerId;
       const isEnemyBuilding = building && !isCurrentPlayer;
+      const playerColor = player?.color?.primary || '#808080';
       
       // Check if this enemy building is adjacent to any of my castles
       let isAttackable = false;
@@ -171,6 +198,10 @@ function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuild
         <div
           key={`${x}-${y}`}
           className={`${styles.mapTile} ${building ? styles.hasBuilding : ""} ${selectedBuilding ? styles.canPlace : ""} ${isAttackable ? styles.attackable : ""}`}
+          style={building && building.buildingId !== 'road' ? {
+            borderColor: playerColor,
+            borderWidth: isCurrentPlayer ? '3px' : '2px'
+          } : {}}
           onClick={() => {
             if (attackMode && isAttackable && onAttackClick) {
               onAttackClick(x, y, building);
@@ -189,12 +220,22 @@ function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuild
           }
         >
           {building && (
-            <div className={`${styles.mapBuilding} ${isCurrentPlayer ? styles.myBuilding : styles.opponentBuilding} ${building.buildingId === 'road' ? styles.roadBuilding : ''}`}>
+            <div 
+              className={`${styles.mapBuilding} ${building.buildingId === 'road' ? styles.roadBuilding : ''}`}
+              style={{
+                backgroundColor: building.buildingId === 'road' 
+                  ? `rgba(${hexToRgb(playerColor)}, 0.3)`
+                  : `rgba(${hexToRgb(playerColor)}, 0.4)`,
+                borderColor: playerColor,
+                borderWidth: isCurrentPlayer ? '3px' : '2px',
+                boxShadow: isCurrentPlayer ? `0 0 15px ${playerColor}` : `0 0 5px ${playerColor}`
+              }}
+            >
               <span className={styles.buildingIcon}>{building.icon}</span>
             </div>
           )}
           {selectedBuilding && !building && !attackMode && (
-            <div className={styles.placementPreview}>
+            <div className={styles.placementPreview} style={{ borderColor: currentPlayerColor }}>
               {selectedBuilding.icon}
             </div>
           )}
@@ -792,9 +833,13 @@ export default function Home() {
                   setShowBuildings(false);
                   setSelectedBuilding(null);
                 }}
-                disabled={!!winner || players.length < 3 || !isMyTurn}
+                disabled={!!winner || players.length < 3 || !isMyTurn || (currentPlayerState.hasAttacked === true)}
               >
-                {attackMode ? "❌ Cancel Attack" : "⚔️ Attack"}
+                {currentPlayerState.hasAttacked 
+                  ? "⚔️ Already Attacked"
+                  : attackMode 
+                  ? "❌ Cancel Attack" 
+                  : "⚔️ Attack"}
               </button>
             </div>
 
@@ -804,7 +849,32 @@ export default function Home() {
               </div>
             )}
 
-            {attackResult && (
+            {battleRolling && (
+              <div className={styles.battleRolling}>
+                <h3>⚔️ Battle in Progress!</h3>
+                <div className={styles.battleDiceContainer}>
+                  <div className={styles.battleSide}>
+                    <div className={styles.battleLabel}>Attacker (3 dice)</div>
+                    <div className={styles.battleDice}>
+                      <Die value={0} isRolling={true} />
+                      <Die value={0} isRolling={true} />
+                      <Die value={0} isRolling={true} />
+                    </div>
+                  </div>
+                  <div className={styles.battleVs}>VS</div>
+                  <div className={styles.battleSide}>
+                    <div className={styles.battleLabel}>Defender (2 dice)</div>
+                    <div className={styles.battleDice}>
+                      <Die value={0} isRolling={true} />
+                      <Die value={0} isRolling={true} />
+                    </div>
+                  </div>
+                </div>
+                <p className={styles.rollingText}>Rolling dice...</p>
+              </div>
+            )}
+
+            {attackResult && !battleRolling && (
               <div className={styles.attackResult}>
                 <h3>⚔️ Battle Result</h3>
                 <div className={styles.attackRolls}>
@@ -843,6 +913,19 @@ export default function Home() {
 
             <div className={styles.mapSection}>
               <h2 className={styles.mapTitle}>🗺️ Kingdom Map</h2>
+              <div className={styles.colorLegend}>
+                {players.map((player) => (
+                  <div key={player.id} className={styles.legendItem}>
+                    <span 
+                      className={styles.legendColor}
+                      style={{ backgroundColor: player.color?.primary || '#808080' }}
+                    ></span>
+                    <span className={styles.legendName}>
+                      {player.id === playerId ? `${player.name} (You)` : player.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
               <MapGrid
                 mapSize={MAP_SIZE}
                 buildings={mapBuildings}

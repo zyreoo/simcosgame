@@ -577,6 +577,99 @@ a.secondary {
   border: 2px solid rgba(255, 215, 0, 0.3);
 }
 
+.battleRolling {
+  background: rgba(255, 71, 87, 0.15);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 24px;
+  border: 3px solid rgba(255, 71, 87, 0.4);
+  margin-bottom: 16px;
+  animation: battlePulse 1s ease-in-out infinite;
+  text-align: center;
+}
+
+@keyframes battlePulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 71, 87, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 71, 87, 0.6);
+  }
+}
+
+.battleRolling h3 {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 20px 0;
+}
+
+.battleDiceContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+
+.battleSide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.battleLabel {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
+
+.battleDice {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+.battleVs {
+  font-size: 32px;
+  font-weight: 900;
+  color: #ff4757;
+  text-shadow: 0 0 20px rgba(255, 71, 87, 0.8);
+  animation: vsPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes vsPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+.rollingText {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 18px;
+  font-weight: 600;
+  margin-top: 16px;
+  animation: textBlink 1s ease-in-out infinite;
+}
+
+@keyframes textBlink {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .buildingsPanel {
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
@@ -1814,6 +1907,38 @@ a.secondary {
   text-align: center;
 }
 
+.colorLegend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.legendColor {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 8px currentColor;
+  flex-shrink: 0;
+}
+
+.legendName {
+  font-weight: 600;
+}
+
 .mapGrid {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
@@ -1912,14 +2037,15 @@ a.secondary {
   position: relative;
 }
 
-.mapBuilding.myBuilding {
-  background: rgba(74, 144, 226, 0.3);
-  border: 2px solid #4A90E2;
-}
-
-.mapBuilding.opponentBuilding {
-  background: rgba(205, 92, 92, 0.3);
-  border: 2px solid #CD5C5C;
+.playerColorDot {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-right: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 8px currentColor;
+  vertical-align: middle;
 }
 
 .mapBuilding.roadBuilding {
