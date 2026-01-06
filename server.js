@@ -74,15 +74,16 @@ app.prepare().then(() => {
           die1: 1,
           die2: 1,
           isRolling: false,
-          wood: 100,
-          stone: 50,
-          bricks: 25,
+          wood: 1000,
+          stone: 1000,
+          bricks: 1000,
           woodMultiplier: 1,
           stoneMultiplier: 1,
           bricksMultiplier: 1,
           freeRolls: 0,
           minRoll: 1,
-          points: 0
+          points: 0,
+          hasAttacked: false
         };
       }
 
@@ -175,8 +176,25 @@ app.prepare().then(() => {
       });
     });
 
+    // Helper function to check if two tiles are neighbors
+    const areNeighbors = (x1, y1, x2, y2) => {
+      const dx = Math.abs(x1 - x2);
+      const dy = Math.abs(y1 - y2);
+      return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
+    };
+
+    // Helper function to check road/castle connectivity
+    const hasRoadConnection = (playerId, targetX, targetY, mapBuildings) => {
+      const playerCastles = mapBuildings.filter(b => b.playerId === playerId && b.buildingId === 'castle');
+      const playerRoads = mapBuildings.filter(b => b.playerId === playerId && b.buildingId === 'road');
+      
+      // Check if target is adjacent to any road or castle
+      const allPlayerBuildings = [...playerCastles, ...playerRoads];
+      return allPlayerBuildings.some(b => areNeighbors(b.x, b.y, targetX, targetY));
+    };
+
     // Handle building purchase
-    socket.on('purchase-building', ({ roomId, playerId, buildingId, x, y }) => {
+    socket.on('purchase-building', ({ roomId, playerId, buildingId, x, y, checkRoadConnection }) => {
       const room = rooms.get(roomId);
       if (!room || !room.gameState.players[playerId]) return;
       if (room.gameState.winner) return; // Game already ended
@@ -195,16 +213,71 @@ app.prepare().then(() => {
       
       // Buildings configuration (same as frontend)
       const buildings = {
-        house: { cost: { wood: 150, stone: 80, bricks: 50 }, points: 5, icon: '🏠', name: 'House' },
-        farm: { cost: { wood: 250, stone: 150, bricks: 100 }, points: 10, icon: '🚜', name: 'Farm' },
-        barracks: { cost: { wood: 350, stone: 250, bricks: 180 }, points: 15, icon: '⚔️', name: 'Barracks' },
-        tower: { cost: { wood: 400, stone: 350, bricks: 280 }, points: 20, icon: '🗼', name: 'Tower' },
-        market: { cost: { wood: 500, stone: 300, bricks: 250 }, points: 25, icon: '🏪', name: 'Market' },
-        castle: { cost: { wood: 800, stone: 600, bricks: 500 }, points: 40, icon: '🏰', name: 'Castle' }
+        castle: { cost: { wood: 200, stone: 150, bricks: 100 }, points: 30, icon: '🏰', name: 'Castle' },
+        road: { cost: { wood: 50, stone: 30, bricks: 20 }, points: 0, icon: '🛣️', name: 'Road' }
       };
 
       const building = buildings[buildingId];
       if (!building) return;
+
+      // For roads, check if player has at least one castle
+      if (buildingId === 'road') {
+        const playerCastles = room.gameState.mapBuildings.filter(
+          b => b.playerId === playerId && b.buildingId === 'castle'
+        );
+        if (playerCastles.length === 0) {
+          io.to(socket.id).emit('building-error', {
+            message: 'You need to build a castle first before building roads!'
+          });
+          return;
+        }
+        
+        // Roads must be adjacent to a castle or another road
+        if (!hasRoadConnection(playerId, x, y, room.gameState.mapBuildings)) {
+          io.to(socket.id).emit('building-error', {
+            message: 'Road must be adjacent to a castle or another road!'
+          });
+          return;
+        }
+      }
+      
+      // Castles can be built anywhere (no requirement for first one)
+      // Subsequent castles must be adjacent to roads (not directly to other castles)
+      if (buildingId === 'castle') {
+        const playerCastles = room.gameState.mapBuildings.filter(
+          b => b.playerId === playerId && b.buildingId === 'castle'
+        );
+        
+        // Check if trying to build directly adjacent to another castle (not allowed)
+        const isAdjacentToCastle = playerCastles.some(castle => 
+          areNeighbors(castle.x, castle.y, x, y)
+        );
+        
+        if (isAdjacentToCastle) {
+          io.to(socket.id).emit('building-error', {
+            message: 'Castles cannot be directly adjacent! Build a road between them first.'
+          });
+          return;
+        }
+        
+        // If player already has castles, new ones must be adjacent to roads
+        if (playerCastles.length > 0 && checkRoadConnection) {
+          const playerRoads = room.gameState.mapBuildings.filter(
+            b => b.playerId === playerId && b.buildingId === 'road'
+          );
+          // Check if adjacent to a road
+          const isAdjacentToRoad = playerRoads.some(road => 
+            areNeighbors(road.x, road.y, x, y)
+          );
+          
+          if (!isAdjacentToRoad) {
+            io.to(socket.id).emit('building-error', {
+              message: 'Castle must be adjacent to a road! Castles cannot be directly next to each other.'
+            });
+            return;
+          }
+        }
+      }
 
       // Check if can afford
       if (playerState.wood >= building.cost.wood &&
@@ -266,24 +339,65 @@ app.prepare().then(() => {
       if (room.gameState.winner) return;
       if (room.gameState.activePlayerId !== attackerId) return; // Must be attacker's turn
 
+      const attackerState = room.gameState.players[attackerId];
+      
+      // Check if player has already attacked this turn
+      if (attackerState.hasAttacked) {
+        io.to(socket.id).emit('attack-error', {
+          message: 'You can only attack once per turn!'
+        });
+        return;
+      }
+
       // Find the building
       const buildingIndex = room.gameState.mapBuildings.findIndex(b => b.id === buildingId && b.x === x && b.y === y);
       if (buildingIndex === -1) return;
       const building = room.gameState.mapBuildings[buildingIndex];
       
-      // Verify it's an enemy building
+      // Verify it's an enemy building and a castle
       if (building.playerId === attackerId) return;
+      if (building.buildingId !== 'castle') return; // Can only attack castles
 
-      // Roll dice: Attacker 3 dice, Defender 2 dice
-      const attackerRolls = [
-        Math.floor(Math.random() * 6) + 1,
-        Math.floor(Math.random() * 6) + 1,
-        Math.floor(Math.random() * 6) + 1
-      ];
-      const defenderRolls = [
-        Math.floor(Math.random() * 6) + 1,
-        Math.floor(Math.random() * 6) + 1
-      ];
+      // Check if attacker has a castle adjacent to the target
+      const attackerCastles = room.gameState.mapBuildings.filter(
+        b => b.playerId === attackerId && b.buildingId === 'castle'
+      );
+      
+      const isAdjacent = attackerCastles.some(castle => 
+        areNeighbors(castle.x, castle.y, x, y)
+      );
+      
+      if (!isAdjacent) {
+        io.to(socket.id).emit('attack-error', {
+          message: 'You can only attack castles adjacent to your own castle!'
+        });
+        return;
+      }
+
+      // Mark that attacker has used their attack
+      attackerState.hasAttacked = true;
+
+      // Broadcast battle start with rolling animation
+      io.to(roomId).emit('battle-started', {
+        attackerId,
+        defenderId,
+        buildingId,
+        x,
+        y
+      });
+
+      // Simulate dice rolling animation (wait 2 seconds)
+      setTimeout(() => {
+        // Roll dice: Attacker 3 dice, Defender 2 dice
+        const attackerRolls = [
+          Math.floor(Math.random() * 6) + 1,
+          Math.floor(Math.random() * 6) + 1,
+          Math.floor(Math.random() * 6) + 1
+        ];
+        const defenderRolls = [
+          Math.floor(Math.random() * 6) + 1,
+          Math.floor(Math.random() * 6) + 1
+        ];
 
       // Calculate totals and max
       const attackerTotal = attackerRolls.reduce((a, b) => a + b, 0);
@@ -316,15 +430,10 @@ app.prepare().then(() => {
       if (winner === attackerId) {
         // Attacker wins - destroy building and gain points
         const buildingConfig = {
-          house: { points: 5 },
-          farm: { points: 10 },
-          barracks: { points: 15 },
-          tower: { points: 20 },
-          market: { points: 25 },
-          castle: { points: 40 }
+          castle: { points: 30 }
         };
         
-        const buildingData = buildingConfig[building.buildingId] || { points: 5 };
+        const buildingData = buildingConfig[building.buildingId] || { points: 30 };
         pointsGained = buildingData.points;
         
         // Remove building from map

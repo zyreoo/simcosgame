@@ -298,6 +298,17 @@ a.secondary {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
+.activePlayerLabel {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  margin-bottom: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
 .gameRight {
   display: flex;
   flex-direction: column;
@@ -1775,6 +1786,17 @@ a.secondary {
   height: 70px;
 }
 
+.hiddenInfo {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
 .mapSection {
   width: 100%;
   background: rgba(255, 255, 255, 0.08);
@@ -1898,6 +1920,12 @@ a.secondary {
 .mapBuilding.opponentBuilding {
   background: rgba(205, 92, 92, 0.3);
   border: 2px solid #CD5C5C;
+}
+
+.mapBuilding.roadBuilding {
+  background: rgba(139, 69, 19, 0.4);
+  border: 1px solid #8B4513;
+  border-radius: 2px;
 }
 
 .buildingIcon {

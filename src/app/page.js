@@ -67,30 +67,35 @@ function PlayerDisplay({ player, isCurrentPlayer, gameState }) {
           🏆 {playerState.points || 0} points
         </div>
       </div>
-      <div className={styles.playerResources}>
-        <Resource 
-          name="Wood" 
-          value={playerState.wood || 0} 
-          icon="🪵" 
-          color="#8B4513"
-        />
-        <Resource 
-          name="Stone" 
-          value={playerState.stone || 0} 
-          icon="🪨" 
-          color="#808080"
-        />
-        <Resource 
-          name="Bricks" 
-          value={playerState.bricks || 0} 
-          icon="🧱" 
-          color="#CD5C5C"
-        />
-      </div>
-      <div className={styles.playerDice}>
-        <Die value={playerState.die1 || 1} isRolling={playerState.isRolling || false} />
-        <Die value={playerState.die2 || 1} isRolling={playerState.isRolling || false} />
-      </div>
+      {isCurrentPlayer && (
+        <>
+          <div className={styles.playerResources}>
+            <Resource 
+              name="Wood" 
+              value={playerState.wood || 0} 
+              icon="🪵" 
+              color="#8B4513"
+            />
+            <Resource 
+              name="Stone" 
+              value={playerState.stone || 0} 
+              icon="🪨" 
+              color="#808080"
+            />
+            <Resource 
+              name="Bricks" 
+              value={playerState.bricks || 0} 
+              icon="🧱" 
+              color="#CD5C5C"
+            />
+          </div>
+        </>
+      )}
+      {!isCurrentPlayer && (
+        <div className={styles.hiddenInfo}>
+          Resources hidden
+        </div>
+      )}
     </div>
   );
 }
@@ -137,8 +142,15 @@ function Building({ building, onPurchase, wood, stone, bricks, isSelected, onSel
   );
 }
 
-function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuilding, currentPlayerId, players, attackMode }) {
+function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuilding, currentPlayerId, players, attackMode, myCastles }) {
   const tiles = [];
+  
+  // Helper to check if two tiles are neighbors
+  const areNeighbors = (x1, y1, x2, y2) => {
+    const dx = Math.abs(x1 - x2);
+    const dy = Math.abs(y1 - y2);
+    return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
+  };
   
   for (let y = 0; y < mapSize; y++) {
     for (let x = 0; x < mapSize; x++) {
@@ -147,27 +159,37 @@ function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuild
       const isCurrentPlayer = player && player.id === currentPlayerId;
       const isEnemyBuilding = building && !isCurrentPlayer;
       
+      // Check if this enemy building is adjacent to any of my castles
+      let isAttackable = false;
+      if (attackMode && isEnemyBuilding && building.buildingId === 'castle') {
+        isAttackable = myCastles.some(castle => 
+          areNeighbors(castle.x, castle.y, x, y)
+        );
+      }
+      
       tiles.push(
         <div
           key={`${x}-${y}`}
-          className={`${styles.mapTile} ${building ? styles.hasBuilding : ""} ${selectedBuilding ? styles.canPlace : ""} ${attackMode && isEnemyBuilding ? styles.attackable : ""}`}
+          className={`${styles.mapTile} ${building ? styles.hasBuilding : ""} ${selectedBuilding ? styles.canPlace : ""} ${isAttackable ? styles.attackable : ""}`}
           onClick={() => {
-            if (attackMode && isEnemyBuilding && onAttackClick) {
+            if (attackMode && isAttackable && onAttackClick) {
               onAttackClick(x, y, building);
             } else if (!attackMode && onTileClick) {
               onTileClick(x, y);
             }
           }}
           title={
-            attackMode && isEnemyBuilding 
+            attackMode && isAttackable
               ? `⚔️ Attack ${building.name} (${player?.name || 'Unknown'})`
+              : attackMode && isEnemyBuilding && !isAttackable
+              ? `Too far! Must be adjacent to your castle`
               : building 
               ? `${building.name} (${player?.name || 'Unknown'})` 
               : `Place at (${x}, ${y})`
           }
         >
           {building && (
-            <div className={`${styles.mapBuilding} ${isCurrentPlayer ? styles.myBuilding : styles.opponentBuilding}`}>
+            <div className={`${styles.mapBuilding} ${isCurrentPlayer ? styles.myBuilding : styles.opponentBuilding} ${building.buildingId === 'road' ? styles.roadBuilding : ''}`}>
               <span className={styles.buildingIcon}>{building.icon}</span>
             </div>
           )}
@@ -176,7 +198,7 @@ function MapGrid({ mapSize, buildings, onTileClick, onAttackClick, selectedBuild
               {selectedBuilding.icon}
             </div>
           )}
-          {attackMode && isEnemyBuilding && (
+          {isAttackable && (
             <div className={styles.attackIndicator}>⚔️</div>
           )}
         </div>
@@ -211,6 +233,8 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [attackMode, setAttackMode] = useState(false);
   const [attackResult, setAttackResult] = useState(null);
+  const [battleRolling, setBattleRolling] = useState(false);
+  const [battleData, setBattleData] = useState(null);
   
   const socketRef = useRef(null);
   const WIN_POINTS = 200;
@@ -218,52 +242,20 @@ export default function Home() {
 
   const buildings = [
     {
-      id: "house",
-      name: "House",
-      description: "A simple dwelling",
-      icon: "🏠",
-      cost: { wood: 150, stone: 80, bricks: 50 },
-      points: 5
-    },
-    {
-      id: "farm",
-      name: "Farm",
-      description: "Produces food for your kingdom",
-      icon: "🚜",
-      cost: { wood: 250, stone: 150, bricks: 100 },
-      points: 10
-    },
-    {
-      id: "barracks",
-      name: "Barracks",
-      description: "Train your army",
-      icon: "⚔️",
-      cost: { wood: 350, stone: 250, bricks: 180 },
-      points: 15
-    },
-    {
-      id: "tower",
-      name: "Watchtower",
-      description: "Keep watch over your lands",
-      icon: "🗼",
-      cost: { wood: 400, stone: 350, bricks: 280 },
-      points: 20
-    },
-    {
-      id: "market",
-      name: "Market",
-      description: "Trade with other kingdoms",
-      icon: "🏪",
-      cost: { wood: 500, stone: 300, bricks: 250 },
-      points: 25
-    },
-    {
       id: "castle",
       name: "Castle",
-      description: "The heart of your kingdom",
+      description: "Build your first castle anywhere",
       icon: "🏰",
-      cost: { wood: 800, stone: 600, bricks: 500 },
-      points: 40
+      cost: { wood: 200, stone: 150, bricks: 100 },
+      points: 30
+    },
+    {
+      id: "road",
+      name: "Road",
+      description: "Requires a castle first",
+      icon: "🛣️",
+      cost: { wood: 50, stone: 30, bricks: 20 },
+      points: 0
     }
   ];
 
@@ -310,23 +302,38 @@ export default function Home() {
       socket.on("building-purchased", ({ playerId: purchasedPlayerId, gameState, points, buildingId, x, y }) => {
         setGameState(gameState);
         if (purchasedPlayerId === playerId) {
-          setBonusMessage(`✅ Building constructed! +${points} points`);
+          if (buildingId === 'road') {
+            setBonusMessage(`✅ Road built!`);
+          } else {
+            setBonusMessage(`✅ Castle constructed! +${points} points`);
+          }
           setTimeout(() => setBonusMessage(""), 2000);
           setSelectedBuilding(null);
         }
+      });
+
+      socket.on("building-error", ({ message }) => {
+        setBonusMessage(`❌ ${message}`);
+        setTimeout(() => setBonusMessage(""), 3000);
+      });
+
+      socket.on("attack-error", ({ message }) => {
+        setBonusMessage(`❌ ${message}`);
+        setTimeout(() => setBonusMessage(""), 3000);
       });
 
       socket.on("map-updated", ({ buildings }) => {
         setMapBuildings(buildings);
       });
 
-      socket.on("attack-initiated", ({ attackerId, defenderId, buildingId, x, y }) => {
-        if (attackerId === playerId || defenderId === playerId) {
-          setAttackMode(false);
-        }
+      socket.on("battle-started", ({ attackerId, defenderId, buildingId, x, y }) => {
+        setBattleRolling(true);
+        setBattleData({ attackerId, defenderId, buildingId, x, y });
+        setAttackMode(false);
       });
 
       socket.on("attack-result", ({ attackerId, defenderId, attackerRolls, defenderRolls, attackerTotal, defenderTotal, attackerMax, defenderMax, winner, buildingDestroyed, pointsGained }) => {
+        setBattleRolling(false);
         setAttackResult({
           attackerId,
           defenderId,
@@ -340,7 +347,10 @@ export default function Home() {
           buildingDestroyed,
           pointsGained
         });
-        setTimeout(() => setAttackResult(null), 5000);
+        setTimeout(() => {
+          setAttackResult(null);
+          setBattleData(null);
+        }, 5000);
       });
 
       socket.on("player-won", ({ playerId: winnerId, playerName }) => {
@@ -461,13 +471,31 @@ export default function Home() {
       return;
     }
 
-    socketRef.current.emit("purchase-building", { 
-      roomId, 
-      playerId, 
-      buildingId: selectedBuilding.id,
-      x,
-      y
-    });
+    // Check if player has castles (for roads) or if it's a subsequent castle
+    const myCastles = mapBuildings.filter(b => b.playerId === playerId && b.buildingId === 'castle');
+    const hasCastles = myCastles.length > 0;
+
+    if (selectedBuilding.id === 'castle') {
+      // First castle can be anywhere, subsequent ones need road connection
+      socketRef.current.emit("purchase-building", { 
+        roomId, 
+        playerId, 
+        buildingId: selectedBuilding.id,
+        x,
+        y,
+        checkRoadConnection: hasCastles
+      });
+    } else if (selectedBuilding.id === 'road') {
+      // Roads always need connection check
+      socketRef.current.emit("purchase-building", { 
+        roomId, 
+        playerId, 
+        buildingId: selectedBuilding.id,
+        x,
+        y,
+        checkRoadConnection: true
+      });
+    }
   };
 
   const initiateAttack = (x, y, building) => {
@@ -489,6 +517,7 @@ export default function Home() {
   const currentPlayerState = gameState.players[playerId] || {};
   const isMyTurn = !gameState.activePlayerId || gameState.activePlayerId === playerId;
   const activePlayer = players.find((p) => p.id === gameState.activePlayerId);
+  const activePlayerState = activePlayer ? (gameState.players[activePlayer.id] || {}) : {};
   
   // Disable attack mode if not your turn
   useEffect(() => {
@@ -498,10 +527,10 @@ export default function Home() {
   }, [isMyTurn, attackMode]);
 
   if (screen === "lobby") {
-    return (
+  return (
       <div className={styles.page} style={{ filter: `brightness(${brightness}%)`, backgroundColor: '#0a0a1a', overflow: 'hidden' }}>
         <div className={styles.starsBackground}></div>
-        <main className={styles.main}>
+      <main className={styles.main}>
           <button 
             className={styles.settingsButton}
             onClick={() => setShowSettings(!showSettings)}
@@ -677,28 +706,35 @@ export default function Home() {
           {/* Center - Dice & Actions */}
           <div className={styles.gameCenter}>
             <div className={styles.diceSection}>
-              <div className={styles.diceWrapper}>
-                <Die value={currentPlayerState.die1 || 1} isRolling={currentPlayerState.isRolling || false} />
-                <Die value={currentPlayerState.die2 || 1} isRolling={currentPlayerState.isRolling || false} />
-              </div>
-              
-              {!currentPlayerState.isRolling && (
-                <div className={styles.sum}>
-                  <span className={styles.sumLabel}>Total:</span>
-                  <span className={styles.sumValue}>{(currentPlayerState.die1 || 0) + (currentPlayerState.die2 || 0)}</span>
-                </div>
+              {activePlayer && (
+                <>
+                  <div className={styles.activePlayerLabel}>
+                    {activePlayer.id === playerId ? "Your Dice" : `${activePlayer.name}'s Dice`}
+                  </div>
+                  <div className={styles.diceWrapper}>
+                    <Die value={activePlayerState.die1 || 1} isRolling={activePlayerState.isRolling || false} />
+                    <Die value={activePlayerState.die2 || 1} isRolling={activePlayerState.isRolling || false} />
+                  </div>
+                  
+                  {!activePlayerState.isRolling && activePlayerState.die1 && activePlayerState.die2 && (
+                    <div className={styles.sum}>
+                      <span className={styles.sumLabel}>Total:</span>
+                      <span className={styles.sumValue}>{(activePlayerState.die1 || 0) + (activePlayerState.die2 || 0)}</span>
+                    </div>
+                  )}
+                </>
               )}
 
               <button
                 className={styles.rollButton}
                 onClick={rollDice}
-                disabled={currentPlayerState.isRolling || !socketRef.current || !isMyTurn || !!winner || players.length < 3}
+                disabled={activePlayerState.isRolling || !socketRef.current || !isMyTurn || !!winner || players.length < 3}
               >
                 {winner
                   ? "🏆 Game Over"
                   : players.length < 3
                   ? "⏳ Waiting for players..."
-                  : currentPlayerState.isRolling
+                  : activePlayerState.isRolling
                   ? "🎲 Rolling..."
                   : isMyTurn
                   ? "🎲 Roll Dice!"
@@ -710,19 +746,19 @@ export default function Home() {
                   <span className={styles.ruleDie}>🎲 Die 1</span>
                   <span className={styles.ruleArrow}>→</span>
                   <span className={styles.ruleResource} style={{ color: "#8B4513" }}>🪵 Wood</span>
-                  <span className={styles.ruleMultiplier}>×{10 * (currentPlayerState.woodMultiplier || 1)}</span>
+                  <span className={styles.ruleMultiplier}>×{10 * (activePlayerState.woodMultiplier || 1)}</span>
                 </div>
                 <div className={styles.ruleItem}>
                   <span className={styles.ruleDie}>🎲 Die 2</span>
                   <span className={styles.ruleArrow}>→</span>
                   <span className={styles.ruleResource} style={{ color: "#808080" }}>🪨 Stone</span>
-                  <span className={styles.ruleMultiplier}>×{5 * (currentPlayerState.stoneMultiplier || 1)}</span>
+                  <span className={styles.ruleMultiplier}>×{5 * (activePlayerState.stoneMultiplier || 1)}</span>
                 </div>
                 <div className={styles.ruleItem}>
                   <span className={styles.ruleDie}>➕ Sum</span>
                   <span className={styles.ruleArrow}>→</span>
                   <span className={styles.ruleResource} style={{ color: "#CD5C5C" }}>🧱 Bricks</span>
-                  <span className={styles.ruleMultiplier}>×{2 * (currentPlayerState.bricksMultiplier || 1)}</span>
+                  <span className={styles.ruleMultiplier}>×{2 * (activePlayerState.bricksMultiplier || 1)}</span>
                 </div>
               </div>
             </div>
@@ -764,7 +800,7 @@ export default function Home() {
 
             {attackMode && (
               <div className={styles.attackModeHint}>
-                ⚔️ Click on an enemy building to attack! (You roll 3 dice, defender rolls 2)
+                ⚔️ Click on an enemy castle adjacent to your castle to attack! (You roll 3 dice, defender rolls 2)
               </div>
             )}
 
@@ -816,6 +852,7 @@ export default function Home() {
                 currentPlayerId={playerId}
                 players={players}
                 attackMode={attackMode}
+                myCastles={mapBuildings.filter(b => b.playerId === playerId && b.buildingId === 'castle')}
               />
             </div>
 
@@ -824,7 +861,11 @@ export default function Home() {
                 <h3 className={styles.buildingsTitle}>🏗️ Build Your Kingdom</h3>
                 <p className={styles.placementHint}>
                   {selectedBuilding 
-                    ? `Selected: ${selectedBuilding.name} - Click on the map to place it`
+                    ? selectedBuilding.id === 'castle'
+                      ? mapBuildings.filter(b => b.playerId === playerId && b.buildingId === 'castle').length > 0
+                        ? `Selected: ${selectedBuilding.name} - Must be adjacent to a road (castles cannot be directly next to each other)`
+                        : `Selected: ${selectedBuilding.name} - Build your first castle anywhere!`
+                      : `Selected: ${selectedBuilding.name} - Must be adjacent to a castle or road`
                     : "Select a building, then click on the map to place it"}
                 </p>
                 <div className={styles.buildingsGrid}>
